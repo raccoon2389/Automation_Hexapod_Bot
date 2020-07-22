@@ -130,8 +130,10 @@ class LabelTool():
 ##            tkMessageBox.showerror("Error!", message = "The specified dir doesn't exist!")
 ##            return
         # get image list
-        self.imageDir = os.path.join(r'./Images', '%03d' %(self.category))
+        self.imageDir = "D:/Hexa/Automation_Hexapod_Bot/Labeling/BBox-Label-Tool-master"+os.path.join(r'/Images', '%03d' %(self.category))
         self.imageList = glob.glob(os.path.join(self.imageDir, '*.*'))
+        print(self.imageDir)
+        print(self.imageList)
         # self.imageList = self.imageList + glob.glob(os.path.join(self.imageDir, '*.JPEG'))
         if len(self.imageList) == 0:
             print('No .JPEG images found in the specified dir!')
@@ -165,7 +167,7 @@ class LabelTool():
                 self.egLabels[i].config(image = self.egList[-1], width = SIZE[0], height = SIZE[1])
 
         self.loadImage()
-        print(self.total, ' images loaded from ', s)
+        print(self.total, ' images loaded from ', s) 
 
     def loadImage(self):
         # load image
