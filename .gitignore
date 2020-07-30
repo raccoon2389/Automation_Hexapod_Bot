@@ -1,1 +1,5 @@
 *.jpg
+/data/*
+.vscode/settings.json
+x.npy
+y.npy
