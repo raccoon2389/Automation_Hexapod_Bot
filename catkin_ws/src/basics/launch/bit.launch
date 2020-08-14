@@ -1,0 +1,12 @@
+<launch>
+
+    <node pkg="basics" type="arduino_teleop_publisher.py" name="pub_node" />
+    <node pkg="rosserial_python" type="serial_node.py" args="/dev/ttyACM2" name="serial_node" />
+    
+</launch>
+
+
+
+
+
+
