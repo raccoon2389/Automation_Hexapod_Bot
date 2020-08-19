@@ -1,28 +1,34 @@
+#include <ros.h>
+#include <std_msgs/String.h>
 #include <Servo.h>
 #include <math.h>
 
-const int COXA1_SERVO  = 19;          //servo port definitions
-const int FEMUR1_SERVO = 21;
-const int TIBIA1_SERVO = 23;
+ros::NodeHandle nh;
+
+const int COXA1_SERVO  = 28;          //servo port definitions
+const int FEMUR1_SERVO = 30;
+const int TIBIA1_SERVO = 29;
 const int COXA2_SERVO  = 25;
 const int FEMUR2_SERVO = 27;
-const int TIBIA2_SERVO = 29;
-const int COXA3_SERVO  = 31;
-const int FEMUR3_SERVO = 33;
-const int TIBIA3_SERVO = 35;
-const int COXA4_SERVO  = 37;
-const int FEMUR4_SERVO = 39;
-const int TIBIA4_SERVO = 41;
-const int COXA5_SERVO  = 43;
-const int FEMUR5_SERVO = 45;
-const int TIBIA5_SERVO = 47;
-const int COXA6_SERVO  = 49;
-const int FEMUR6_SERVO = 51;
-const int TIBIA6_SERVO = 53;
+const int TIBIA2_SERVO = 26;
+const int COXA3_SERVO  = 22;
+const int FEMUR3_SERVO = 24;
+const int TIBIA3_SERVO = 23;
+const int COXA4_SERVO  = 4;
+const int FEMUR4_SERVO = 2;
+const int TIBIA4_SERVO = 3;
+const int COXA5_SERVO  = 7;
+const int FEMUR5_SERVO = 5;
+const int TIBIA5_SERVO = 6;
+const int COXA6_SERVO  = 10;
+const int FEMUR6_SERVO = 8;
+const int TIBIA6_SERVO = 9;
 
-const int COXA_LENGTH = 51;          
+const int COXA_LENGTH = 51;           //leg part lengths
 const int FEMUR_LENGTH = 65;
 const int TIBIA_LENGTH = 121;
+
+const int TRAVEL = 30;                //translate and rotate travel limit constant
 																		  
 const long A12DEG = 209440;           //12 degrees in radians x 1,000,000
 const long A30DEG = 523599;           //30 degrees in radians x 1,000,000
@@ -41,30 +47,22 @@ const int COXA_CAL[6]  = {2, -1, -1, -3, -2, -3};                       //servo 
 const int FEMUR_CAL[6] = {4, -2,  0, -1,  0,  0};
 const int TIBIA_CAL[6] = {0, -3, -3, -2, -3, -1};
 
-
-//***********************************************************************
-// Variable Declarations 변수 선언
-//***********************************************************************
-
 unsigned long currentTime;            //frame timer variables
 unsigned long previousTime;
 
-int mode;
+int mode = 0;
 int gait;
-int gait_speed;
+int gait_speed = 0;
 int reset_position;
 int capture_offsets;
 
-float L0, L3;                         //inverse kinematics variables
-float gamma_femur;
-float phi_tibia, phi_femur;
-float theta_tibia, theta_femur, theta_coxa;
 
 int leg_num;                          //positioning and walking variables
 int totalX, totalY, totalZ;
 int tick, duration, numTicks;
 int z_height_left, z_height_right;
-int commandedX, commandedY, commandedR;
+int commandedX, commandedY;
+int commandedR = 0;
 int translateX, translateY, translateZ;
 float step_height_multiplier;
 float strideX, strideY, strideR;
@@ -77,10 +75,10 @@ float current_X[6], current_Y[6], current_Z[6];
 
 int tripod_case[6]   = {1,2,1,2,1,2};     //for tripod gait walking
 
-//***********************************************************************
-// Object Declarations
-//***********************************************************************
-PS2X ps2x;              //PS2 gamepad controller
+float L0, L3;                         //inverse kinematics variables
+float gamma_femur;
+float phi_tibia, phi_femur;
+float theta_tibia, theta_femur, theta_coxa;
 
 Servo coxa1_servo;      //18 servos
 Servo femur1_servo;
@@ -101,16 +99,48 @@ Servo coxa6_servo;
 Servo femur6_servo;
 Servo tibia6_servo;
 
+String dd;
 
-//***********************************************************************
-// Initialization Routine
-//***********************************************************************
+int leg1_IK_control, leg6_IK_control;
+
+void messageCb(const std_msgs::String &msg)
+{
+  dd = msg.data;
+  if(dd == "w")
+  {
+    commandedX = 0;
+    commandedY = -126;
+    tripod_gait();
+  }
+  else if(dd == "s")
+  {
+    commandedX = 0;
+    commandedY = 126;
+    tripod_gait();
+  }
+  else if(dd == "a")
+  {
+    commandedX = -126;
+    commandedY = 0;
+    tripod_gait();
+  } 
+  else if(dd == "d")
+  {
+    commandedX = 126;
+    commandedY = 0;
+    tripod_gait();
+  }
+  else if(dd == "r")
+  {
+    set_all_90();
+  }
+}
+
+ros::Subscriber<std_msgs::String> sub("ww", &messageCb);
+
 void setup()
 {
-  //start serial 통신 시작
-  Serial.begin(115200);
-  
-  //attach servos
+  Serial.begin(57600);
   coxa1_servo.attach(COXA1_SERVO,610,2400);
   femur1_servo.attach(FEMUR1_SERVO,610,2400);
   tibia1_servo.attach(TIBIA1_SERVO,610,2400);
@@ -129,40 +159,22 @@ void setup()
   coxa6_servo.attach(COXA6_SERVO,610,2400);
   femur6_servo.attach(FEMUR6_SERVO,610,2400);
   tibia6_servo.attach(TIBIA6_SERVO,610,2400);
-    
-  //clear offsets
   for(leg_num=0; leg_num<6; leg_num++)
   {
     offset_X[leg_num] = 0.0;
     offset_Y[leg_num] = 0.0;
     offset_Z[leg_num] = 0.0;
   }
-  capture_offsets = false;
-  step_height_multiplier = 1.0;
-
-  //initialize mode and gait variables // 초기화  (gait == 걷는 모양)
-  mode = 0;
-  gait = 0;
-  gait_speed = 1;
   reset_position = true;
   leg1_IK_control = true;
   leg6_IK_control = true;
+  nh.initNode();
+  nh.subscribe(sub);
 }
 
-
-//***********************************************************************
-// Main Program
-//***********************************************************************
-void loop() 
+void loop()
 {
-  //set up frame time
-  currentTime = millis();
-  if((  currentTime - previousTime) > FRAME_TIME_MS)
-  {
-    previousTime = currentTime; 
-
-
-    //reset legs to home position when commanded
+  //reset legs to home position when commanded
     if(reset_position == true)
     {
       for(leg_num=0; leg_num<6; leg_num++)
@@ -173,42 +185,22 @@ void loop()
       }
       reset_position = false; 
     }
-    
-    //position legs using IK calculations - unless set all to 90 degrees mode
     if(mode < 99)
     {
       for(leg_num=0; leg_num<6; leg_num++)
         leg_IK(leg_num,current_X[leg_num]+offset_X[leg_num],current_Y[leg_num]+offset_Y[leg_num],current_Z[leg_num]+offset_Z[leg_num]);       
     }
-
-    //reset leg lift first pass flags if needed
     if(mode != 4) 
     {
       leg1_IK_control = true; 
       leg6_IK_control = true; 
     }
 
-    print_debug();                            //print debug data
-
-    //process modes (mode 0 is default 'home idle' do-nothing mode)
-    if(mode == 1)                             //walking mode
-    {
-      if(gait == 0) tripod_gait();            //walk using gait 0
-    }
-    if(mode == 99) set_all_90();              //set all servos to 90 degrees mode
-  }
+  nh.spinOnce();
+  delay(1);
 }
 
 
-  if(ps2x.ButtonPressed(PSB_SELECT))      //set all servos to 90 degrees for calibration
-  {
-    mode = 99;   
-  }
-
-
-//***********************************************************************
-// Leg IK Routine
-//***********************************************************************
 void leg_IK(int leg_number,float X,float Y,float Z)
 {
   //compute target femur-to-toe (L3) length
@@ -296,20 +288,8 @@ void leg_IK(int leg_number,float X,float Y,float Z)
   }
 }
 
-
-//***********************************************************************
-// Tripod Gait
-// Group of 3 legs move forward while the other 3 legs provide support
-//***********************************************************************
 void tripod_gait()
 {
-  //read commanded values from controller
-  commandedX = map(ps2x.Analog(PSS_RY),0,255,127,-127);
-  commandedY = map(ps2x.Analog(PSS_RX),0,255,-127,127);
-  commandedR = map(ps2x.Analog(PSS_LX),0,255,127,-127);
-    
-  //if commands more than deadband then process 너무나 민감하게 하지 않기 위해 15 이상의
-// 변경이 있을 경우에 해당 행동을 수행하도록 명령함
   if((abs(commandedX) > 15) || (abs(commandedY) > 15) || (abs(commandedR) > 15) || (tick>0))
   {
     compute_strides();
@@ -335,16 +315,33 @@ void tripod_gait()
     }
     //increment tick
     if(tick < numTicks-1) tick++;
-    else tick = 0;
+    else tick = 0; 
   }
 }
 
+void compute_amplitudes()
+{
+  //compute total distance from center of body to toe
+  totalX = HOME_X[leg_num] + BODY_X[leg_num];
+  totalY = HOME_Y[leg_num] + BODY_Y[leg_num];
 
+  //compute rotational offset
+  rotOffsetX = totalY*sinRotZ + totalX*cosRotZ - totalX;
+  rotOffsetY = totalY*cosRotZ - totalX*sinRotZ - totalY;
 
+  //compute X and Y amplitude and constrain to prevent legs from crashing into each other
+  amplitudeX = ((strideX + rotOffsetX)/2.0);
+  amplitudeY = ((strideY + rotOffsetY)/2.0);
+  amplitudeX = constrain(amplitudeX,-50,50);
+  amplitudeY = constrain(amplitudeY,-50,50);
 
-//***********************************************************************
-// Compute walking stride lengths
-//***********************************************************************
+  //compute Z amplitude
+  if(abs(strideX + rotOffsetX) > abs(strideY + rotOffsetY))
+    amplitudeZ = step_height_multiplier * (strideX + rotOffsetX) /4.0;
+  else
+    amplitudeZ = step_height_multiplier * (strideY + rotOffsetY) / 4.0;
+}
+
 void compute_strides()
 {
   //compute stride lengths
@@ -361,74 +358,6 @@ void compute_strides()
   else duration = 3240;
 }
 
-
-      
-//***********************************************************************
-// Body rotate with controller (xyz axes)
-//***********************************************************************
-void rotate_control()
-{
-  //compute rotation sin/cos values using controller inputs
-  sinRotX = sin((map(ps2x.Analog(PSS_RX),0,255,A12DEG,-A12DEG))/1000000.0);
-  cosRotX = cos((map(ps2x.Analog(PSS_RX),0,255,A12DEG,-A12DEG))/1000000.0);
-  sinRotY = sin((map(ps2x.Analog(PSS_RY),0,255,A12DEG,-A12DEG))/1000000.0);
-  cosRotY = cos((map(ps2x.Analog(PSS_RY),0,255,A12DEG,-A12DEG))/1000000.0);
-  sinRotZ = sin((map(ps2x.Analog(PSS_LX),0,255,-A30DEG,A30DEG))/1000000.0);
-  cosRotZ = cos((map(ps2x.Analog(PSS_LX),0,255,-A30DEG,A30DEG))/1000000.0);
-
-  //compute Z direction move
-  translateZ = ps2x.Analog(PSS_LY);
-  if(translateZ > 127)
-    translateZ = map(translateZ,128,255,0,TRAVEL); 
-  else
-    translateZ = map(translateZ,0,127,-3*TRAVEL,0);    
-
-  for(int leg_num=0; leg_num<6; leg_num++)
-  {
-    //compute total distance from center of body to toe
-    totalX = HOME_X[leg_num] + BODY_X[leg_num];
-    totalY = HOME_Y[leg_num] + BODY_Y[leg_num];
-    totalZ = HOME_Z[leg_num] + BODY_Z[leg_num];
-
-    //perform 3 axis rotations
-    rotOffsetX =  totalX*cosRotY*cosRotZ + totalY*sinRotX*sinRotY*cosRotZ + totalY*cosRotX*sinRotZ - totalZ*cosRotX*sinRotY*cosRotZ + totalZ*sinRotX*sinRotZ - totalX;
-    rotOffsetY = -totalX*cosRotY*sinRotZ - totalY*sinRotX*sinRotY*sinRotZ + totalY*cosRotX*cosRotZ + totalZ*cosRotX*sinRotY*sinRotZ + totalZ*sinRotX*cosRotZ - totalY;
-    rotOffsetZ =  totalX*sinRotY         - totalY*sinRotX*cosRotY                                  + totalZ*cosRotX*cosRotY                                  - totalZ;
-
-    // Calculate foot positions to achieve desired rotation
-    current_X[leg_num] = HOME_X[leg_num] + rotOffsetX;
-    current_Y[leg_num] = HOME_Y[leg_num] + rotOffsetY;
-    current_Z[leg_num] = HOME_Z[leg_num] + rotOffsetZ + translateZ;
-
-    //lock in offsets if commanded
-    if(capture_offsets == true)
-    {
-      offset_X[leg_num] = offset_X[leg_num] + rotOffsetX;
-      offset_Y[leg_num] = offset_Y[leg_num] + rotOffsetY;
-      offset_Z[leg_num] = offset_Z[leg_num] + rotOffsetZ + translateZ;
-      current_X[leg_num] = HOME_X[leg_num];
-      current_Y[leg_num] = HOME_Y[leg_num];
-      current_Z[leg_num] = HOME_Z[leg_num];
-    }
-  }
-
-  //if offsets were commanded, exit current mode
-  if(capture_offsets == true)
-  {
-    capture_offsets = false;
-    mode = 0;
-  }
-}
-
-
-
-
-//***********************************************************************
-// Set all servos to 90 degrees
-// Note: this is useful for calibration/alignment of the servos
-// i.e: set COXA_CAL[6], FEMUR_CAL[6], and TIBIA_CAL[6] values in  
-//      constants section above so all angles appear as 90 degrees
-//***********************************************************************
 void set_all_90()
 {
   coxa1_servo.write(90+COXA_CAL[0]); 
@@ -457,44 +386,3 @@ void set_all_90()
 }
 
 
-
-
-//***********************************************************************
-// Print Debug Data
-//***********************************************************************
-void print_debug()
-{
-  //output IK data
-//  Serial.print(int(theta_coxa));
-//  Serial.print(",");
-//  Serial.print(int(theta_femur));
-//  Serial.print(",");
-//  Serial.print(int(theta_tibia));
-//  Serial.print(",");
-
-  //output XYZ coordinates for all legs
-//  for(leg_num=0; leg_num<6; leg_num++)
-//  {
-//    Serial.print(int(current_X[leg_num]));
-//    if(leg_num<5) Serial.print(",");
-//  }
-//  Serial.print("  ");
-//  for(leg_num=0; leg_num<6; leg_num++)
-//  {
-//    Serial.print(int(current_Y[leg_num]));
-//    if(leg_num<5) Serial.print(",");
-//  }
-//  Serial.print("  ");
-//  for(leg_num=0; leg_num<6; leg_num++)
-//  {
-//    Serial.print(int(current_Z[leg_num]));
-//    if(leg_num<5) Serial.print(",");
-//  }
-//  Serial.print("  ");
-
-  //display elapsed frame time (ms) and battery voltage (V)
-  currentTime = millis();
-  Serial.print(currentTime-previousTime);
-  Serial.print(",");
-  Serial.print("\n");
-}
