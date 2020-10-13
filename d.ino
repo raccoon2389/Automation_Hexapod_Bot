@@ -97,7 +97,7 @@ Servo coxa6_servo;
 Servo femur6_servo;
 Servo tibia6_servo;
 
-String dd;
+char dd;
 
 int leg1_IK_control = true;
 int leg6_IK_control = true;
@@ -185,9 +185,51 @@ void setup()
 
 void loop()
 {
-    nh.spinOnce();
-    delay(1);
-}
+    if (Serial.available()) //시리얼 모니터에 데이터가 입력되면
+    {
+        char dd;            // 입력된 데이터를 담을 변수 in_data
+        dd = Serial.read(); //시리얼모니터로 입력된 데이터 in_data로 저장
+        if (dd == "w")
+        {
+            commandedX = 0;
+            commandedY = -64;
+            tripod_gait();
+            Serial.print("w");
+        }
+        else if (dd == "s")
+        {
+            commandedX = 0;
+            commandedY = 64;
+            tripod_gait();
+            Serial.print("s");
+        }
+        else if (dd == "a")
+        {
+            commandedX = -64;
+            commandedY = 0;
+            tripod_gait();
+            Serial.print("a");
+        }
+        else if (dd == "d")
+        {
+            commandedX = 64;
+            commandedY = 0;
+            tripod_gait();
+            Serial.print("d");
+        }
+        else if (dd == "r")
+        {
+            set_all_90();
+            Serial.println("set_all_90");
+        }
+        else if (dd == "h")
+        {
+            home_position();
+            Serial.println("h");
+        }
+        nh.spinOnce();
+        delay(1);
+    }
 
 void leg_IK(int leg_number, float X, float Y, float Z)
 {
