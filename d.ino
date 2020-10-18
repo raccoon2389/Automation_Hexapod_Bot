@@ -5,24 +5,24 @@
 
 ros::NodeHandle nh;
 
-const int COXA1_SERVO = 28; //servo port definitions
-const int FEMUR1_SERVO = 29;
-const int TIBIA1_SERVO = 30;
-const int COXA2_SERVO = 25;
-const int FEMUR2_SERVO = 26;
-const int TIBIA2_SERVO = 27;
-const int COXA3_SERVO = 22;
-const int FEMUR3_SERVO = 23;
-const int TIBIA3_SERVO = 24;
-const int COXA4_SERVO = 4;
-const int FEMUR4_SERVO = 3;
-const int TIBIA4_SERVO = 2;
-const int COXA5_SERVO = 7;
-const int FEMUR5_SERVO = 6;
-const int TIBIA5_SERVO = 5;
-const int COXA6_SERVO = 10;
-const int FEMUR6_SERVO = 9;
-const int TIBIA6_SERVO = 8;
+const int COXA1_SERVO = 8; //servo port definitions
+const int FEMUR1_SERVO = 9;
+const int TIBIA1_SERVO = 10;
+const int COXA2_SERVO = 7;
+const int FEMUR2_SERVO = 6;
+const int TIBIA2_SERVO = 5;
+const int COXA3_SERVO = 4;
+const int FEMUR3_SERVO = 3;
+const int TIBIA3_SERVO = 2;
+const int COXA4_SERVO = 52;
+const int FEMUR4_SERVO = 51;
+const int TIBIA4_SERVO = 53;
+const int COXA5_SERVO = 50;
+const int FEMUR5_SERVO = 49;
+const int TIBIA5_SERVO = 48;
+const int COXA6_SERVO = 47;
+const int FEMUR6_SERVO = 46;
+const int TIBIA6_SERVO = 45;
 
 const int COXA_LENGTH = 51; //leg part lengths
 const int FEMUR_LENGTH = 65;
@@ -45,7 +45,7 @@ const float BODY_Z[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
 const int COXA_CAL[6] = {2, -1, -1, -3, -2, -3}; //servo calibration constants
 const int FEMUR_CAL[6] = {4, -2, 0, -1, 0, 0};
-const int TIBIA_CAL[6] = {0, -3, -3, -2, -3, -1};
+const int TIBIA_CAL[6] = {10, 7, 7, 8, 7, 9};
 
 unsigned long currentTime; //frame timer variables
 unsigned long previousTime;
@@ -60,7 +60,8 @@ int leg_num; //positioning and walking variables
 int totalX, totalY, totalZ;
 int tick, duration, numTicks;
 int z_height_left, z_height_right;
-int commandedX, commandedY, commandedR;
+int commandedX, commandedY;
+int commandedR = 0;
 int translateX, translateY, translateZ;
 float step_height_multiplier;
 float strideX, strideY, strideR;
@@ -72,6 +73,7 @@ float offset_X[6], offset_Y[6], offset_Z[6];
 float current_X[6], current_Y[6], current_Z[6];
 
 int tripod_case[6] = {1, 2, 1, 2, 1, 2}; //for tripod gait walking
+int ripple_case[6] = {2, 6, 4, 1, 3, 5}; //for ripple gait
 
 float L0, L3; //inverse kinematics variables
 float gamma_femur;
@@ -97,57 +99,45 @@ Servo coxa6_servo;
 Servo femur6_servo;
 Servo tibia6_servo;
 
-char dd;
+String dd;
 
-int leg1_IK_control = true;
-int leg6_IK_control = true;
+int leg1_IK_control, leg6_IK_control;
 
 void messageCb(const std_msgs::String &msg)
 {
-    if (mode < 99)
-    {
-        for (leg_num = 0; leg_num < 6; leg_num++)
-            leg_IK(leg_num, current_X[leg_num] + offset_X[leg_num], current_Y[leg_num] + offset_Y[leg_num], current_Z[leg_num] + offset_Z[leg_num]);
-    }
-    commandedR = 0;
     dd = msg.data;
     if (dd == "w")
     {
         commandedX = 0;
-        commandedY = -64;
+        commandedY = -126;
         tripod_gait();
-        Serial.print("w");
+        mode = 1;
     }
     else if (dd == "s")
     {
         commandedX = 0;
-        commandedY = 64;
+        commandedY = 126;
         tripod_gait();
-        Serial.print("s");
+        mode = 1;
     }
     else if (dd == "a")
     {
-        commandedX = -64;
+        commandedX = -126;
         commandedY = 0;
         tripod_gait();
-        Serial.print("a");
+        mode = 1;
     }
     else if (dd == "d")
     {
-        commandedX = 64;
-        commandedY = 0;
+        commandedX = 100;
+        commandedY = 30;
         tripod_gait();
-        Serial.print("d");
+        mode = 1;
     }
     else if (dd == "r")
     {
         set_all_90();
-        Serial.println("set_all_90");
-    }
-    else if (dd == "h")
-    {
-        home_position();
-        Serial.println("h");
+        mode = 99;
     }
 }
 
@@ -155,6 +145,7 @@ ros::Subscriber<std_msgs::String> sub("ww", &messageCb);
 
 void setup()
 {
+    Serial.begin(57600);
     coxa1_servo.attach(COXA1_SERVO, 610, 2400);
     femur1_servo.attach(FEMUR1_SERVO, 610, 2400);
     tibia1_servo.attach(TIBIA1_SERVO, 610, 2400);
@@ -179,57 +170,45 @@ void setup()
         offset_Y[leg_num] = 0.0;
         offset_Z[leg_num] = 0.0;
     }
+    reset_position = true;
+    leg1_IK_control = true;
+    leg6_IK_control = true;
     nh.initNode();
     nh.subscribe(sub);
 }
 
 void loop()
 {
-    if (Serial.available()) //시리얼 모니터에 데이터가 입력되면
+    //  set_all_90();
+    //reset legs to home position when commanded
+    currentTime = millis();
+    if ((currentTime - previousTime) > FRAME_TIME_MS)
     {
-        char dd;            // 입력된 데이터를 담을 변수 in_data
-        dd = Serial.read(); //시리얼모니터로 입력된 데이터 in_data로 저장
-        if (dd == "w")
+        previousTime = currentTime;
+        if (reset_position == true)
         {
-            commandedX = 0;
-            commandedY = -64;
-            tripod_gait();
-            Serial.print("w");
+            for (leg_num = 0; leg_num < 6; leg_num++)
+            {
+                current_X[leg_num] = HOME_X[leg_num];
+                current_Y[leg_num] = HOME_Y[leg_num];
+                current_Z[leg_num] = HOME_Z[leg_num];
+            }
+            reset_position = false;
         }
-        else if (dd == "s")
+        if (mode < 99)
         {
-            commandedX = 0;
-            commandedY = 64;
-            tripod_gait();
-            Serial.print("s");
+            for (leg_num = 0; leg_num < 6; leg_num++)
+                leg_IK(leg_num, current_X[leg_num] + offset_X[leg_num], current_Y[leg_num] + offset_Y[leg_num], current_Z[leg_num] + offset_Z[leg_num]);
         }
-        else if (dd == "a")
+        if (mode != 4)
         {
-            commandedX = -64;
-            commandedY = 0;
-            tripod_gait();
-            Serial.print("a");
+            leg1_IK_control = true;
+            leg6_IK_control = true;
         }
-        else if (dd == "d")
-        {
-            commandedX = 64;
-            commandedY = 0;
-            tripod_gait();
-            Serial.print("d");
-        }
-        else if (dd == "r")
-        {
-            set_all_90();
-            Serial.println("set_all_90");
-        }
-        else if (dd == "h")
-        {
-            home_position();
-            Serial.println("h");
-        }
+
         nh.spinOnce();
-        delay(1);
     }
+}
 
 void leg_IK(int leg_number, float X, float Y, float Z)
 {
@@ -352,6 +331,70 @@ void tripod_gait()
             tick = 0;
     }
 }
+void ripple_gait()
+{
+
+    //if commands more than deadband then process
+    if ((abs(commandedX) > 15) || (abs(commandedY) > 15) || (abs(commandedR) > 15) || (tick > 0))
+    {
+        compute_strides();
+        numTicks = round(duration / FRAME_TIME_MS / 6.0); //total ticks divided into the six cases
+        for (leg_num = 0; leg_num < 6; leg_num++)
+        {
+            compute_amplitudes();
+            switch (ripple_case[leg_num])
+            {
+            case 1: //move foot forward (raise)
+                current_X[leg_num] = HOME_X[leg_num] - amplitudeX * cos(M_PI * tick / (numTicks * 2));
+                current_Y[leg_num] = HOME_Y[leg_num] - amplitudeY * cos(M_PI * tick / (numTicks * 2));
+                current_Z[leg_num] = HOME_Z[leg_num] + abs(amplitudeZ) * sin(M_PI * tick / (numTicks * 2));
+                if (tick >= numTicks - 1)
+                    ripple_case[leg_num] = 2;
+                break;
+            case 2: //move foot forward (lower)
+                current_X[leg_num] = HOME_X[leg_num] - amplitudeX * cos(M_PI * (numTicks + tick) / (numTicks * 2));
+                current_Y[leg_num] = HOME_Y[leg_num] - amplitudeY * cos(M_PI * (numTicks + tick) / (numTicks * 2));
+                current_Z[leg_num] = HOME_Z[leg_num] + abs(amplitudeZ) * sin(M_PI * (numTicks + tick) / (numTicks * 2));
+                if (tick >= numTicks - 1)
+                    ripple_case[leg_num] = 3;
+                break;
+            case 3: //move foot back one-quarter (on the ground)
+                current_X[leg_num] = current_X[leg_num] - amplitudeX / numTicks / 2.0;
+                current_Y[leg_num] = current_Y[leg_num] - amplitudeY / numTicks / 2.0;
+                current_Z[leg_num] = HOME_Z[leg_num];
+                if (tick >= numTicks - 1)
+                    ripple_case[leg_num] = 4;
+                break;
+            case 4: //move foot back one-quarter (on the ground)
+                current_X[leg_num] = current_X[leg_num] - amplitudeX / numTicks / 2.0;
+                current_Y[leg_num] = current_Y[leg_num] - amplitudeY / numTicks / 2.0;
+                current_Z[leg_num] = HOME_Z[leg_num];
+                if (tick >= numTicks - 1)
+                    ripple_case[leg_num] = 5;
+                break;
+            case 5: //move foot back one-quarter (on the ground)
+                current_X[leg_num] = current_X[leg_num] - amplitudeX / numTicks / 2.0;
+                current_Y[leg_num] = current_Y[leg_num] - amplitudeY / numTicks / 2.0;
+                current_Z[leg_num] = HOME_Z[leg_num];
+                if (tick >= numTicks - 1)
+                    ripple_case[leg_num] = 6;
+                break;
+            case 6: //move foot back one-quarter (on the ground)
+                current_X[leg_num] = current_X[leg_num] - amplitudeX / numTicks / 2.0;
+                current_Y[leg_num] = current_Y[leg_num] - amplitudeY / numTicks / 2.0;
+                current_Z[leg_num] = HOME_Z[leg_num];
+                if (tick >= numTicks - 1)
+                    ripple_case[leg_num] = 1;
+                break;
+            }
+        }
+        //increment tick
+        if (tick < numTicks - 1)
+            tick++;
+        else
+            tick = 0;
+    }
+}
 
 void compute_amplitudes()
 {
@@ -419,14 +462,4 @@ void set_all_90()
     coxa6_servo.write(90 + COXA_CAL[5]);
     femur6_servo.write(90 + FEMUR_CAL[5]);
     tibia6_servo.write(90 + TIBIA_CAL[5]);
-}
-
-void home_position()
-{
-    for (leg_num = 0; leg_num < 6; leg_num++)
-    {
-        current_X[leg_num] = HOME_X[leg_num];
-        current_Y[leg_num] = HOME_Y[leg_num];
-        current_Z[leg_num] = HOME_Z[leg_num];
-    }
 }
