@@ -110,34 +110,66 @@ void messageCb(const std_msgs::String &msg)
     {
         commandedX = 0;
         commandedY = -126;
-        tripod_gait();
-        mode = 1;
+        if (mode == 1)
+        {
+            tripod_gait();
+        }
+        else if (mode == 2)
+        {
+            ripple_gait();
+        }
     }
     else if (dd == "s")
     {
         commandedX = 0;
         commandedY = 126;
-        tripod_gait();
-        mode = 1;
+        if (mode == 1)
+        {
+            tripod_gait();
+        }
+        else if (mode == 2)
+        {
+            ripple_gait();
+        }
     }
     else if (dd == "a")
     {
         commandedX = -126;
         commandedY = 0;
-        tripod_gait();
-        mode = 1;
+        if (mode == 1)
+        {
+            tripod_gait();
+        }
+        else if (mode == 2)
+        {
+            ripple_gait();
+        }
     }
     else if (dd == "d")
     {
         commandedX = 100;
         commandedY = 30;
-        tripod_gait();
-        mode = 1;
+        if (mode == 1)
+        {
+            tripod_gait();
+        }
+        else if (mode == 2)
+        {
+            ripple_gait();
+        }
     }
     else if (dd == "r")
     {
         set_all_90();
         mode = 99;
+    }
+    else if (dd == "1")
+    {
+        mode = 1;
+    }
+    else if (dd == "2")
+    {
+        mode = 2;
     }
 }
 
