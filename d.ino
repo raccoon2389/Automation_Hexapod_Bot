@@ -43,9 +43,9 @@ const float BODY_X[6] = {110.4, 0.0, -110.4, -110.4, 0.0, 110.4}; //body center-
 const float BODY_Y[6] = {58.4, 90.8, 58.4, -58.4, -90.8, -58.4};
 const float BODY_Z[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
-const int COXA_CAL[6] = {2, -1, -1, -3, -2, -3}; //servo calibration constants
-const int FEMUR_CAL[6] = {4, -2, 0, -1, 0, 0};
-const int TIBIA_CAL[6] = {10, 7, 7, 8, 7, 9};
+const int COXA_CAL[6] = {0, 0, 0, 0, 0, 0}; //servo calibration constants
+const int FEMUR_CAL[6] = {0, 0, 0, 0, 0, 0};
+const int TIBIA_CAL[6] = {0, 0, 0, 0, 0, 0};
 
 unsigned long currentTime; //frame timer variables
 unsigned long previousTime;
@@ -147,8 +147,8 @@ void messageCb(const std_msgs::String &msg)
     }
     else if (dd == "d")
     {
-        commandedX = 100;
-        commandedY = 30;
+        commandedX = 126;
+        commandedY = 0;
         if (mode == 1)
         {
             tripod_gait();
@@ -253,17 +253,17 @@ void leg_IK(int leg_number, float X, float Y, float Z)
     {
         //compute tibia angle
         phi_tibia = acos((sq(FEMUR_LENGTH) + sq(TIBIA_LENGTH) - sq(L3)) / (2 * FEMUR_LENGTH * TIBIA_LENGTH));
-        theta_tibia = phi_tibia * RAD_TO_DEG - 23.0 + TIBIA_CAL[leg_number];
+        theta_tibia = (phi_tibia * RAD_TO_DEG - 23.0 + TIBIA_CAL[leg_number]) * 1.2;
         theta_tibia = constrain(theta_tibia, 0.0, 180.0);
 
         //compute femur angle
         gamma_femur = atan2(Z, L0);
         phi_femur = acos((sq(FEMUR_LENGTH) + sq(L3) - sq(TIBIA_LENGTH)) / (2 * FEMUR_LENGTH * L3));
-        theta_femur = (phi_femur + gamma_femur) * RAD_TO_DEG + 14.0 + 90.0 + FEMUR_CAL[leg_number];
+        theta_femur = ((phi_femur - gamma_femur) * RAD_TO_DEG + 14.0 + 90.0 + FEMUR_CAL[leg_number]) * 1.1;
         theta_femur = constrain(theta_femur, 0.0, 180.0);
 
         //compute coxa angle
-        theta_coxa = atan2(X, Y) * RAD_TO_DEG + COXA_CAL[leg_number];
+        theta_coxa = (atan2(X, Y) * RAD_TO_DEG + COXA_CAL[leg_number]) * 1.1;
 
         //output to the appropriate leg
         switch (leg_number)
